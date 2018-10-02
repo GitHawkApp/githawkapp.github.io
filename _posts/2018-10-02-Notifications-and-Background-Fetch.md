@@ -8,22 +8,22 @@ This is how we used [Background Fetch](https://developer.apple.com/documentation
 
 <p align="center"><img src="https://user-images.githubusercontent.com/739696/46327776-782f4280-c5d1-11e8-8242-561b77e79e54.jpg" /></p>
 
-One of our values with GitHawk is respecting your privacy, especially when it comes to your GitHub data. We don't use any third-party servers. Instead, we connect directly to GitHub via their API and keep all of your authentication information on your phone.
+One of our values with GitHawk is to respect your privacy, especially when it comes to your GitHub data. We always connect directly to GitHub via the official API, and store all of your authentication information on your phone. No servers involved!
 
-That poses a huge challenge to adding our most-requested feature for GitHawk: **Push Notifications**.
+However, that poses a big challenge for adding our most-requested feature for GitHawk: **Push Notifications**.
 
 <p align="center"><img src="https://user-images.githubusercontent.com/739696/46327873-ff7cb600-c5d1-11e8-873c-26ae39bc202a.jpg" width="600" /></p>
 
-With traditional Apple Push Notification (APN) implementations, you:
+Traditional Apple Push Notifications (APN) require you to:
 
-- Ask the user permission
-- Get a callback with the device token
-- Send that token to your server and save it
-- Whenever you need to send a notification, send content along with the token to Apple's APN servers
+1. Ask the user permission
+2. Get a callback with the device token
+3. Send that token to your server and save it
+4. Whenever you need to send a notification, send content along with the token to Apple's APN servers
 
-That middle part, having to send a token to our servers, can't happen because we don't want to have access to your private auth data.
+That middle step (sending a token to our servers) wont work for GitHawk because we don't want to send your data off of your phone.
 
-However, GitHawk has been using [app background fetch](https://developer.apple.com/documentation/uikit/core_app/managing_your_app_s_life_cycle/preparing_your_app_to_run_in_the_background/updating_your_app_with_background_app_refresh) APIs (glorified polling) to update the badge icon for months now. We decided to piggy-back off of this existing feature with "fake" push notifications.
+GitHawk has been using [app background fetch](https://developer.apple.com/documentation/uikit/core_app/managing_your_app_s_life_cycle/preparing_your_app_to_run_in_the_background/updating_your_app_with_background_app_refresh) APIs (glorified polling) to update the badge icon for months. We decided to piggy-back off of this existing feature and "fake" push notifications.
 
 ## Local Notifications
 
@@ -44,9 +44,9 @@ UNUserNotificationCenter.current().add(request)
 
 The hard part is making this work well with the background fetch API and not annoying your users.
 
-### Setup
+### Permissions and Setup
 
-First off, you have to ask for notification permissions!
+Before anything can happen, you have to ask for notification permissions!
 
 ```swift
 UNUserNotificationCenter.current().requestAuthorization(options: [.alert], completionHandler: { (granted, _) in
@@ -54,33 +54,37 @@ UNUserNotificationCenter.current().requestAuthorization(options: [.alert], compl
 })
 ```
 
-> In GitHawk, we disable notifications **by default** and let the user enable them in a settings screen. This avoids being bombarded with annoying permissions dialogs the first time you open the app.
+In GitHawk, we disable notifications **by default** and let people enable them in the app settings. This way you aren't bombarded with annoying permissions dialogs the first time you open the app.
 
-Next, set the fetch interval. If you're doing this in lieu of actual push notifications, you might as well set this to the minimum time interval.
+Next set the background fetch interval. Set this to the minimum time interval since we want to show alerts as soon as possible.
 
-```
+```swift
 UIApplication.shared.setMinimumBackgroundFetchInterval(UIApplicationBackgroundFetchIntervalMinimum)
 ```
 
-Next up, handle background fetch system calls by overriding the `UIApplication.application(_:, performFetchWithCompletionHandler:)` function. The `AppDelegate` will be initialized, even if your app was started cold.
+> iOS decides when to wake up your app for background fetches based on a bunch factors: Low Power Mode, how often you use the app, and more. Experience may vary!
+
+Handle background fetch events by overriding the `UIApplication.application(_:, performFetchWithCompletionHandler:)` function.
 
 ```swift
 func application(_ application: UIApplication, performFetchWithCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {
-  rootNavigationManager.client?.badge.fetch(application: application, handler: completionHandler)
+  sessionManager.client.fetch(application: application, handler: completionHandler)
 }
 ```
 
-> In GitHawk, we lazily initialize our session objects which then become readily available, making networking easy.
+Make sure to **always** call the `completionHandler`!
 
-### Avoiding Notification Fatigue
+> In GitHawk we lazily initialize session objects on the `AppDelegate`. This makes networking during background fetch _really_ easy.
 
-If we alerted all content on every fetch, you'd uninstall GitHawk pretty quick! We need to only alert for content that is new, and do it in a performant way.
+### Notification Fatigue
 
-The naive approach would be to toss IDs and timestamps in `UserDefaults`, but that's gross, and remember that `UserDefaults` are loaded into memory on app start! That's a recipe for slow perf down the road.
+If GitHawk alerted content that you've already seen, you'd uninstall it pretty quick!
 
-Thankfully, this is just what databases are for! SQLite is a wonderfully lightweight database with first-class support on iOS, and [FMDB](https://github.com/ccgus/fmdb) removes all the hairy bits.
+A naive approach would be to store IDs and timestamps in `UserDefaults`, but `UserDefaults` are loaded into memory on app start. That's guaranteed to tank performance down the road.
 
-Before we jump into code, let's design how this system should work:
+Thankfully this is exactly what databases are for! SQLite is a lightweight database with first-class support on iOS, and [FMDB](https://github.com/ccgus/fmdb) removes all the hairy bits from working with it.
+
+Before we jump into code, let's first design how the system should work:
 
 - We need an `id: String` for each content that should alert. This will be the key in our table.
 - Create the table if it doesn't already exist
@@ -88,9 +92,9 @@ Before we jump into code, let's design how this system should work:
 - Insert all of the new `id`s into the table
 - Trim the table so it doesn't grow unbounded
 
-> Trimming the table may be an unnecessary optimization, but the last thing I want is a 100mb SQLite file polluting people's phones just to have notification receipts.
+> Trimming the table may be an eager optimization, but the last thing I want is a 100MB SQLite file on someone's phone just for notification receipts.
 
-In order to keep this thread-safe, we use `FMDatabaseQueue` and execute all database transactions in the a single closure.
+In order to keep this thread-safe, use `FMDatabaseQueue` and execute all database transactions in a closure:
 
 ```swift
 let queue = FMDatabaseQueue(path: databasePath)
@@ -99,7 +103,7 @@ queue.inDatabase { db in
 }
 ```
 
-In GitHawk, the first thing we do is convert an array of content into a mutable `Dictionary<String: Content>` so that we can remove already-alerted content and then lookup content by its `id`.
+In GitHawk, the first thing we do is convert an array of content into a mutable `Dictionary<String: Content>` so that we can remove already-alerted `id`s and later lookup the original `Content`.
 
 ```swift
 var map = [String: Content]()
@@ -107,7 +111,7 @@ contents.forEach { map[$0.id] = $0 }
 let ids = map.keys.map { $0 }
 ```
 
-Then inside our database transaction closure, start by creating the table:
+Then in the transaction closure, create the SQLite table:
 
 ```swift
 queue.inDatabase { db in 
@@ -122,9 +126,9 @@ queue.inDatabase { db in
 }
 ```
 
-> SQLite's `if not exists` makes creating the table once a breeze!
+> SQLite's `if not exists` makes creating the table _once_ a breeze!
 
-Next we select `id`s that already exist in the table and remove them from the `map`:
+Next select `id`s that already exist in the table and remove them from the `map` so that you're left with content that hasn't been seen.
 
 ```swift
 queue.inDatabase { db in 
@@ -148,7 +152,7 @@ queue.inDatabase { db in
 }
 ```
 
-Now the `map` is populated with content that we haven't seen before, so we need to add of these `id`s to the table.
+Now all of the `map` entries need to be added to the table:
 
 ```swift
 queue.inDatabase { db in 
@@ -168,7 +172,7 @@ queue.inDatabase { db in
 }
 ```
 
-Before we're done with the database, let's cap the `receipts` table to 1000 entries. We can do this easily with only the `autoincrement` column:
+Before we're done with the database, let's cap the `receipts` table to 1000 entries. We can do this easily just by using the `autoincrement` column:
 
 ```swift
 queue.inDatabase { db in 
@@ -198,4 +202,4 @@ While not as fully featured as traditional Apple Push Notifications (realtime al
 
 You can check out our implementation of this system in [LocalNotificationCache.swift](https://github.com/GitHawkApp/GitHawk/blob/7b0746332129d3077f1ba036c9c20ebe45d27751/Classes/Systems/LocalNotificationsCache.swift) and [BadgeNotifications.swift](https://github.com/GitHawkApp/GitHawk/blob/7b0746332129d3077f1ba036c9c20ebe45d27751/Classes/Systems/BadgeNotifications.swift#L125-L144).
 
-> If there's enough interest, I'm happy to extract this functionality into its own Pod!)
+> If there's enough interest, I'm happy to extract this functionality into its own Pod!
