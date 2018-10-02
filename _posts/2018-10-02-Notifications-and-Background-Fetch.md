@@ -22,7 +22,7 @@ One of our values with GitHawk is respecting your privacy, especially when it co
 
 That poses a huge challenge to adding our most-requested feature for GitHawk: **Push Notifications**.
 
-![App Store Review](https://user-images.githubusercontent.com/739696/46262026-927df900-c4c9-11e8-9d15-7c65825f1ddf.jpg)
+![App Store Review](https://user-images.githubusercontent.com/739696/46327873-ff7cb600-c5d1-11e8-873c-26ae39bc202a.jpg)
 
 With traditional Apple Push Notification (APN) implementations, you:
 
