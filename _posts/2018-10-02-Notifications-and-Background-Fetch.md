@@ -6,13 +6,13 @@ title: Local Notifications with Background Fetch
 
 This is how we used [Background Fetch](https://developer.apple.com/documentation/uikit/core_app/managing_your_app_s_life_cycle/preparing_your_app_to_run_in_the_background/updating_your_app_with_background_app_refresh) to show Local Notifications instead of traditional Push Notifications in GitHawk. We used [FMDB](https://github.com/ccgus/fmdb) to track delivered alerts in our [implementation](https://github.com/GitHawkApp/GitHawk/blob/master/Classes/Systems/LocalNotificationsCache.swift).
 
-<p align="center"><img src="https://user-images.githubusercontent.com/739696/46327776-782f4280-c5d1-11e8-8242-561b77e79e54.jpg" width="600" /></p>
+<p align="center"><img src="https://user-images.githubusercontent.com/739696/46327776-782f4280-c5d1-11e8-8242-561b77e79e54.jpg" /></p>
 
 One of our values with GitHawk is respecting your privacy, especially when it comes to your GitHub data. We don't use any third-party servers. Instead, we connect directly to GitHub via their API and keep all of your authentication information on your phone.
 
 That poses a huge challenge to adding our most-requested feature for GitHawk: **Push Notifications**.
 
-![App Store Review](https://user-images.githubusercontent.com/739696/46327873-ff7cb600-c5d1-11e8-873c-26ae39bc202a.jpg)
+<p align="center"><img src="https://user-images.githubusercontent.com/739696/46327873-ff7cb600-c5d1-11e8-873c-26ae39bc202a.jpg" width="600" /></p>
 
 With traditional Apple Push Notification (APN) implementations, you:
 
